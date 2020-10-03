@@ -1,0 +1,230 @@
+---
+title: "Milestone Report"
+author: "N Selva Kumar"
+date: "10/3/2020"
+output: html_document
+---
+
+## Synopsis
+
+This Milestone Report is for the Coursera Data Science Capstone project. The goal is to create a predictive text model using a large text corpus of documents as training data. 
+
+Natural language processing techniques will be used to perform the analysis and build the predictive model.
+
+This milestone report describes the major features of the training data and summarizes our plans for creating the predictive model. All done through exploratory data analysis(EDA).
+
+## Getting the data
+
+```{r libraries, message=F, warning=F}
+library(tidyverse)
+library(stringi)
+library(tm)
+library(RWeka)
+```
+
+``` {r download data}
+
+# URL for the data
+url <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+
+## Check if zip has been downloaded in given directory?
+if(!file.exists("./data/Coursera-SwiftKey.zip")){
+  download.file(url,destfile="./data/Coursera-SwiftKey.zip",mode = "wb")
+}
+
+## Check if zip has been unzipped
+if(!file.exists("./data/final")){
+  unzip(zipfile="./data/Coursera-SwiftKey.zip",exdir="./data")
+}
+
+```
+Once the dataset is downloaded, we need to  start reading it. The dataset given is huge and thus it is recommended to read in line by line. 
+
+We will only be focusing on the English - US datasets (en_US) 
+Files in the directory:
+
+The data sets consist of text from 3 different sources:
+
+__1.__ News 
+
+__2.__ Blogs  
+
+__3.__ Twitter feeds. 
+
+
+
+```{r Reading lines}
+# Path of US datasets
+path <- file.path("./data/final" , "en_US")
+files<-list.files(path, recursive=TRUE)
+
+# File connection to twitter data set
+tweets <- file("./data/final/en_US/en_US.twitter.txt", "r") 
+
+twitterLines <-readLines(tweets, skipNul = TRUE)
+
+close(tweets) # Close the connection after done 
+
+# File connection to blog data set
+blogs <- file("./data/final/en_US/en_US.blogs.txt", "r") 
+
+blogLines<-readLines(blogs, skipNul = TRUE)
+
+close(blogs) # Close the connection when done
+
+# File connection of news data set
+news <- file("./data/final/en_US/en_US.news.txt", "r") 
+
+newsLines<-readLines(news, skipNul = TRUE)
+
+close(news) # Close the connection when done
+```
+
+
+Summary of findings:
+
+*file sizes* 
+
+*line counts*
+
+*word counts*
+
+*mean words per line*
+
+```{r summary}
+# Get file sizes
+twitterSize <- file.info("./data/final/en_US/en_US.twitter.txt")$size / 1024 ^ 2
+
+blogSize <- file.info("./data/final/en_US/en_US.blogs.txt")$size / 1024 ^ 2
+
+newsSize <- file.info("./data/final/en_US/en_US.news.txt")$size / 1024 ^ 2
+
+# Get words in files
+twitterWords <- stri_count_words(twitterLines)
+blogWords <- stri_count_words(blogLines)
+newsWords <- stri_count_words(newsLines)
+# Summary of the data sets
+data.frame(source = c("blogs", "news", "twitter"),
+           file.size.MB = c(blogSize, 
+                            newsSize, 
+                            twitterSize),
+           
+           num.lines = c(length(blogLines), 
+                         length(newsLines), 
+                         length(twitterLines)),
+           
+           num.words = c(sum(blogWords), 
+                         sum(newsWords), 
+                         sum(twitterWords)),
+           
+           mean.num.words =c(mean(blogWords), 
+                             mean(newsWords), 
+                             mean(twitterWords)))
+```
+
+## Cleaning The Data
+Before EDA, the data has to be cleaned. 
+Involves removal of URLs, special characters, punctuations, numbers, excess whitespace, stopwords, and changing the text to lower case. 
+
+Since the data sets are huge, 2% of the data are randomly chosen to demonstrate the data cleaning and exploratory data analysis.
+
+UTF chars have to be taken care of.
+
+```{r Clean Data}
+set.seed(2020) # Sample data for reproducible results
+
+sample <- c(sample(blogLines, length(blogLines) * 0.02),
+                 sample(newsLines, length(newsLines) * 0.02),
+                 sample(twitterLines, length(twitterLines) * 0.02))
+
+# Create corpus and clean data
+corpus <- VCorpus(VectorSource(sample))
+
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+
+corpus <- tm_map(corpus, toSpace, "(f|ht)tp(s?)://(.*)[.][a-z]+")
+corpus <- tm_map(corpus, toSpace, "@[^\\s]+")
+corpus <- tm_map(corpus, tolower)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, PlainTextDocument)
+```
+
+
+## Exploratory Data Analysis
+
+EDA is conducted on the data. 
+
+Find the most frequently occurring words in the data. 
+
+Common (n-grams) uni-grams, bi-grams, and tri-grams.
+
+```{r EDA}
+
+options(mc.cores=1)
+
+# Unigram
+unigram<-function(x) NGramTokenizer(x,Weka_control(min=1,max=1))
+unigramtab<-TermDocumentMatrix(corpus,control=list(tokenize=unigram))
+unigramcorpus<-findFreqTerms(unigramtab,lowfreq=1000)
+unigramcorpusnum<-rowSums(as.matrix(unigramtab[unigramcorpus,]))
+unigramcorpustab<-data.frame(Word=names(unigramcorpusnum),frequency=unigramcorpusnum)
+unigramcorpussort<-unigramcorpustab[order(-unigramcorpustab$frequency),]
+
+# Bigram
+bigram<-function(x) NGramTokenizer(x,Weka_control(min=2,max=2))
+bigramtab<-TermDocumentMatrix(corpus,control=list(tokenize=bigram))
+bigramcorpus<-findFreqTerms(bigramtab,lowfreq=80)
+bigramcorpusnum<-rowSums(as.matrix(bigramtab[bigramcorpus,]))
+bigramcorpustab<-data.frame(Word=names(bigramcorpusnum),frequency=bigramcorpusnum)
+bigramcorpussort<-bigramcorpustab[order(-bigramcorpustab$frequency),]
+
+# Trigram
+trigram<-function(x) NGramTokenizer(x,Weka_control(min=3,max=3))
+trigramtab<-TermDocumentMatrix(corpus,control=list(tokenize=trigram))
+trigramcorpus<-findFreqTerms(trigramtab,lowfreq=10)
+trigramcorpusnum<-rowSums(as.matrix(trigramtab[trigramcorpus,]))
+trigramcorpustab<-data.frame(Word=names(trigramcorpusnum),frequency=trigramcorpusnum)
+trigramcorpussort<-trigramcorpustab[order(-trigramcorpustab$frequency),]
+
+
+```
+
+Histogram of the 20 most common unigrams in the data sample.
+
+```{r unigram }
+ggplot(unigramcorpussort[1:20,],aes(x=reorder(Word,-frequency),y=frequency))+
+    geom_bar(stat="identity",fill = I("green"))+
+    labs(title="20 Most Common Uni-grams",x="Words",y="Frequency")+
+    theme(axis.text.x=element_text(angle=60, size = 12, hjust = 1))
+
+```
+
+Histogram of the 20 most common bigrams in the data sample.
+
+```{r bigram}
+ggplot(bigramcorpussort[1:20,],aes(x=reorder(Word,-frequency),y=frequency))+
+    geom_bar(stat="identity",fill = I("blue"))+
+    labs(title="20 Most Common Bi-grams",x="Words",y="Frequency")+
+    theme(axis.text.x=element_text(angle=60, size = 12, hjust = 1))
+```
+
+Histogram of the 20 most common trigrams in the data sample.
+```{r trigram}
+ggplot(trigramcorpussort[1:20,],aes(x=reorder(Word,-frequency),y=frequency))+
+    geom_bar(stat="identity",fill = I("red"))+
+    labs(title="20 Most Common Tri-grams",x="Words",y="Frequency")+
+    theme(axis.text.x=element_text(angle=60, size = 12, hjust = 1))
+```
+
+## Conclusion and further planning
+This concludes the exploratory data analysis. The next steps would be to finalize the predictive algorithm, and deploy the algorithm as a Shiny app.
+
+
+The user interface of the Shiny app will consist of a text input box that will allow a user to enter a phrase. Then the app will use our algorithm to suggest the most likely next word. 
